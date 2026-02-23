@@ -709,32 +709,53 @@ const TOEIC_PARTS = ['Part 5 – Incomplete Sentences', 'Part 6 – Text Complet
 // ════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════
-function init(){
-  // Fully synchronous — zero network calls on startup
+async function init(){
+  // ── Check for student share link (?bid=...&bk=...) ──
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlBinId  = urlParams.get('bid');
+  const urlBinKey = urlParams.get('bk');
+  const isStudentLink = urlBinId && urlBinKey;
+
   CFG   = loadJson(CFG_KEY,   {});
   PROG  = loadJson(PROG_KEY,  {});
-  CLOUD = loadJson(CLOUD_KEY, null);
 
   // ── Migrate old CFG formats ──
-  // Old format had binKey+binId but no adminPwd
-  if(CFG.binKey && !CFG.adminPwd){
-    CFG.adminPwd = 'admin';
-    saveJson(CFG_KEY, CFG);
-  }
-  // Old format stored CLOUD inside CFG (very old builds)
-  if(CFG.topics && !CLOUD){
-    CLOUD = {topics: CFG.topics};
-    saveJson(CLOUD_KEY, CLOUD);
+  if(CFG.binKey && !CFG.adminPwd){ CFG.adminPwd = 'admin'; saveJson(CFG_KEY, CFG); }
+  if(CFG.topics){ CLOUD = {topics: CFG.topics}; saveJson(CLOUD_KEY, CLOUD); }
+
+  if(isStudentLink){
+    // Student mode: load vocab from JSONBin, no admin setup needed
+    // Check if this student already has a local cache for this bin
+    const cacheKey = CLOUD_KEY + '_' + urlBinId;
+    CLOUD = loadJson(cacheKey, null);
+    if(CLOUD && CLOUD.topics && CLOUD.topics.length > 0){
+      // Show instantly from cache
+      loadProgress();
+      showStudent();
+      hideOverlay();
+      // Refresh from server in background
+      fetchStudentCloud(urlBinId, urlBinKey, cacheKey, true);
+    } else {
+      // First visit — must fetch from server
+      setMsg('Đang tải từ vựng...');
+      await fetchStudentCloud(urlBinId, urlBinKey, cacheKey, false);
+      loadProgress();
+      showStudent();
+      hideOverlay();
+    }
+    return;
   }
 
-  // First run — show setup
+  // ── Admin / local mode ──
+  CLOUD = loadJson(CLOUD_KEY, null);
+  if(CFG.topics && !CLOUD){ CLOUD = {topics: CFG.topics}; saveJson(CLOUD_KEY, CLOUD); }
+
   if(!CFG.adminPwd){
     showScreen('screen-setup');
     hideOverlay();
     return;
   }
 
-  // Ensure we have vocabulary data
   if(!CLOUD || !Array.isArray(CLOUD.topics) || CLOUD.topics.length === 0){
     CLOUD = {topics: getDefaultTopics()};
     saveJson(CLOUD_KEY, CLOUD);
@@ -744,10 +765,34 @@ function init(){
   showStudent();
   hideOverlay();
 
-  // JSONBin cloud sync — optional, background only
   if(CFG.binId && CFG.binKey){
     document.getElementById('sync-btn').style.display = '';
     backgroundSync();
+  }
+}
+
+// Fetch vocabulary from JSONBin for student link
+async function fetchStudentCloud(binId, binKey, cacheKey, background){
+  try {
+    const res = await fetch(JSONBIN_URL + '/' + binId + '/latest',
+      {headers: {'X-Master-Key': binKey}});
+    if(!res.ok) throw new Error('fetch failed');
+    const d = await res.json();
+    const fresh = d.record;
+    if(fresh && fresh.topics){
+      const changed = JSON.stringify(fresh) !== JSON.stringify(CLOUD);
+      CLOUD = fresh;
+      saveJson(cacheKey, CLOUD); // cache per-binId
+      if(background && changed){
+        renderTopicGrid(); updateHeader(); updateProgress();
+        showToast('🔄 Từ vựng đã được cập nhật');
+      }
+    }
+  } catch(e){
+    if(!background && (!CLOUD || !CLOUD.topics)){
+      // No cache, no network → use defaults
+      CLOUD = {topics: getDefaultTopics()};
+    }
   }
 }
 
@@ -975,8 +1020,16 @@ function showAdminPanel(){
   populateTopicSelects();
 }
 function copyShareLink(){
-  const url = window.location.href.split('?')[0];
-  navigator.clipboard.writeText(url).then(()=>showToast('✅ Đã copy link!'));
+  const base = window.location.href.split('?')[0];
+  if(!CFG.binId || !CFG.binKey){
+    showToast('⚠️ Chưa có JSONBin — link không chứa từ vựng cloud');
+    navigator.clipboard.writeText(base);
+    return;
+  }
+  // Encode binId and binKey into URL so students auto-load the vocabulary
+  const params = new URLSearchParams({bid: CFG.binId, bk: CFG.binKey});
+  const url = base + '?' + params.toString();
+  navigator.clipboard.writeText(url).then(()=>showToast('✅ Đã copy link học sinh!'));
 }
 function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
