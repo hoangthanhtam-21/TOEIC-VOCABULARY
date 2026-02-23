@@ -1784,22 +1784,21 @@ function speakCurrent(){
 }
 function speakWord(word){
   if(!word||word==='—') return;
-  // Cancel any ongoing speech first to prevent partial/stuttered playback
   speechSynthesis.cancel();
-  // Small delay needed for some browsers after cancel()
+  // 350ms silence before speaking — ensures full word is heard from the start
   setTimeout(()=>{
     const utt = new SpeechSynthesisUtterance(word);
-    utt.lang = 'en-US';
-    utt.rate = 0.85;
-    utt.pitch = 1;
-    // Prefer a good English voice if available
+    utt.lang   = 'en-US';
+    utt.rate   = 0.7;   // slow and clear — every syllable audible
+    utt.pitch  = 1;
+    utt.volume = 1;
     const voices = speechSynthesis.getVoices();
     const enVoice = voices.find(v=>v.lang==='en-US' && v.name.toLowerCase().includes('google'))
                  || voices.find(v=>v.lang==='en-US')
                  || voices.find(v=>v.lang.startsWith('en'));
     if(enVoice) utt.voice = enVoice;
     speechSynthesis.speak(utt);
-  }, 120);
+  }, 350);
 }
 
 // ════════════════════════════════════════════
