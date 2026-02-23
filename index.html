@@ -1402,11 +1402,13 @@ async function makeP6Question(words){
   // Build blanks data
   p6PassageTemplate = passageText;
   p6PassageWords = blankWords;
-  p6BlankIdx = 0;
+  p6BlankIdx   = 0;
+  p6ActiveBlank = 0;
+  p6Submitted   = false;
   p6Blanks = blankWords.map(w => {
     const distractors = words.filter(x=>x.word!==w.word).sort(()=>Math.random()-.5).slice(0,3);
     const opts = [w,...distractors].sort(()=>Math.random()-.5);
-    return { word: w, opts, answered: false, chosen: null };
+    return { word: w, opts, chosen: null };
   });
 
   // Update UI with actual genre
@@ -1415,9 +1417,8 @@ async function makeP6Question(words){
   document.getElementById('q-lbl').textContent = genre.hint;
   document.getElementById('q-passage-title').textContent = genre.label;
 
-  renderP6Passage();
   passEl.style.display='block';
-  renderP6Options();
+  renderP6Passage(); // renders passage + options panel together
 }
 
 async function generateP6Passage(blankWords, genre){
@@ -1554,67 +1555,127 @@ function buildFallbackPassage(blankWords, genre){
   return templates[genre.label] || templates['Email'];
 }
 function renderP6Passage(){
-  // Replace blank tokens: answered ones show the word, current blank shows underline, future show grey underline
   let html = p6PassageTemplate;
   p6Blanks.forEach((b, i) => {
     let replacement;
-    if(b.answered){
-      const isCorrect = b.chosen === b.word.word;
-      replacement = `<span style="font-weight:700;color:${isCorrect?'var(--green)':'var(--red)'};">${b.chosen}</span>`;
-    } else if(i === p6BlankIdx){
-      replacement = `<span class="blank" id="p6-active-blank">___________</span>`;
+    if(p6Submitted){
+      // After submit: show chosen word colored, and correct answer if wrong
+      const chosen  = b.chosen;
+      const correct = b.word.word;
+      if(!chosen){
+        // Unanswered blank
+        replacement = `<span onclick="p6ClickBlank(${i})" style="display:inline-block;min-width:80px;border-bottom:2px dashed var(--red);cursor:pointer;padding:0 6px;color:var(--red)">?</span>`;
+      } else if(chosen === correct){
+        replacement = `<span style="font-weight:700;color:var(--green);border-bottom:2px solid var(--green);padding:0 4px;">${chosen}</span>`;
+      } else {
+        replacement = `<span style="font-weight:700;color:var(--red);border-bottom:2px solid var(--red);padding:0 4px;text-decoration:line-through;">${chosen}</span><span style="font-weight:700;color:var(--green);margin-left:4px;">${correct}</span>`;
+      }
+    } else if(b.chosen){
+      // Answered but not yet submitted
+      const isActive = (i === p6ActiveBlank);
+      const color = isActive ? 'var(--blue)' : 'var(--teal)';
+      replacement = `<span onclick="p6ClickBlank(${i})" style="display:inline-block;font-weight:700;color:${color};border-bottom:2px solid ${color};padding:0 6px;cursor:pointer;min-width:60px;">${b.chosen}</span>`;
+    } else if(i === p6ActiveBlank){
+      // Currently selected blank
+      replacement = `<span id="p6-active-blank" onclick="p6ClickBlank(${i})" style="display:inline-block;min-width:80px;border-bottom:2px solid var(--blue);background:rgba(59,130,246,.12);border-radius:4px;padding:0 8px;cursor:pointer;color:var(--blue2);">___</span>`;
     } else {
-      replacement = `<span style="display:inline-block;min-width:80px;border-bottom:2px solid var(--border2);color:var(--text3);padding:0 4px;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>`;
+      // Unselected blank
+      replacement = `<span onclick="p6ClickBlank(${i})" style="display:inline-block;min-width:80px;border-bottom:2px dashed var(--border2);padding:0 6px;cursor:pointer;color:var(--text3);transition:border-color .15s;" onmouseover="this.style.borderColor='var(--blue2)'" onmouseout="this.style.borderColor='var(--border2)'">___</span>`;
     }
     html = html.replace(`[BLANK_${i}]`, replacement);
   });
   html = html.replace(/\n/g, '<br>');
   document.getElementById('q-passage-text').innerHTML = html;
+  renderP6OptionsPanel();
 }
 
-function renderP6Options(){
-  if(p6BlankIdx >= p6Blanks.length){
-    document.getElementById('quiz-opts').innerHTML='';
-    setTimeout(nextQ, 1200);
+let p6ActiveBlank = 0;   // which blank is currently selected
+let p6Submitted   = false;
+
+function p6ClickBlank(idx){
+  if(p6Submitted) return;
+  p6ActiveBlank = idx;
+  renderP6Passage();  // re-render to highlight selected blank
+}
+
+function renderP6OptionsPanel(){
+  const optsEl = document.getElementById('quiz-opts');
+
+  if(p6Submitted){
+    // Show result summary + two action buttons
+    const total   = p6Blanks.length;
+    const correct = p6Blanks.filter(b => b.chosen === b.word.word).length;
+    optsEl.style.display = 'block';
+    optsEl.innerHTML = `
+      <div style="text-align:center;padding:16px 0 8px;">
+        <div style="font-size:28px;font-weight:800;color:${correct===total?'var(--green)':'var(--blue2)'};">${correct}/${total}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:4px;">${correct===total?'🎉 Hoàn hảo!':'Xem đáp án đúng trong đoạn văn'}</div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:8px;">
+        <button class="btn btn-s" onclick="p6Reset()" style="gap:6px;">↻ Làm lại</button>
+        <button class="btn btn-p" onclick="nextQ()"  style="gap:6px;">Tiếp theo →</button>
+      </div>`;
     return;
   }
-  document.getElementById('q-lbl').textContent=`Chọn từ đúng cho chỗ trống ${p6BlankIdx+1}/${p6Blanks.length}`;
-  const blank = p6Blanks[p6BlankIdx];
-  const optsEl = document.getElementById('quiz-opts');
-  optsEl.style.display='grid';
-  // Use data-idx to avoid any quote/escape issues with word strings in onclick
-  optsEl.innerHTML = blank.opts.map((o,i)=>`
-    <button class="q-opt" data-idx="${i}" onclick="checkP6MCQ(this,${i})">
+
+  // Count how many blanks have been filled
+  const filled = p6Blanks.filter(b => b.chosen).length;
+  const total  = p6Blanks.length;
+
+  // Show options for the active blank
+  const blank = p6Blanks[p6ActiveBlank];
+  optsEl.style.display = 'grid';
+  optsEl.innerHTML = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px;grid-column:1/-1;">
+      Chọn từ cho chỗ trống <strong>${p6ActiveBlank+1}</strong>/${total} 
+      &nbsp;·&nbsp; Đã điền: ${filled}/${total}
+    </div>
+    ${blank.opts.map((o,i)=>`
+    <button class="q-opt${blank.chosen===o.word?' active-choice':''}" data-idx="${i}" onclick="p6SelectOpt(${i})">
       <div class="q-opt-inner"><span class="opt-letter">${'ABCD'[i]}</span>${o.word}</div>
-    </button>`).join('');
+    </button>`).join('')}
+    <div style="grid-column:1/-1;margin-top:10px;display:flex;justify-content:flex-end;">
+      <button class="btn btn-p" onclick="p6Submit()" ${filled<total?'disabled style="opacity:.4;cursor:not-allowed"':''}>
+        ✓ Nộp bài (${filled}/${total})
+      </button>
+    </div>`;
 }
 
-function checkP6MCQ(btn, optIdx){
-  const blank   = p6Blanks[p6BlankIdx];
-  const chosen  = blank.opts[optIdx].word;   // word the student picked
-  const correct = blank.word.word;            // correct answer from word object
+function p6SelectOpt(optIdx){
+  if(p6Submitted) return;
+  const chosen = p6Blanks[p6ActiveBlank].opts[optIdx].word;
+  p6Blanks[p6ActiveBlank].chosen = chosen;
 
-  const opts = document.querySelectorAll('.q-opt');
-  opts.forEach(o=>o.classList.add('disabled'));
-  quizTotal++;
-  p6Blanks[p6BlankIdx].answered = true;
-  p6Blanks[p6BlankIdx].chosen = chosen;
+  // Auto-advance to next unfilled blank
+  const nextUnfilled = p6Blanks.findIndex((b, i) => i !== p6ActiveBlank && !b.chosen);
+  if(nextUnfilled !== -1) p6ActiveBlank = nextUnfilled;
+  // else stay on current (all filled, ready to submit)
 
-  if(chosen === correct){
-    btn.classList.add('correct'); quizCorrect++;
-    speakWord(correct);
-  } else {
-    btn.classList.add('wrong'); quizWrong++;
-    // Highlight the correct option by matching word value
-    opts.forEach(o=>{
-      const idx = parseInt(o.getAttribute('data-idx'));
-      if(blank.opts[idx] && blank.opts[idx].word === correct) o.classList.add('reveal');
-    });
-  }
-  updateQuizStats();
   renderP6Passage();
-  p6BlankIdx++;
-  setTimeout(renderP6Options, 1000);
+}
+
+function p6Submit(){
+  const filled = p6Blanks.filter(b => b.chosen).length;
+  if(filled < p6Blanks.length) return;
+
+  p6Submitted = true;
+
+  // Update quiz stats
+  p6Blanks.forEach(b => {
+    quizTotal++;
+    if(b.chosen === b.word.word){ quizCorrect++; }
+    else { quizWrong++; }
+  });
+  updateQuizStats();
+
+  renderP6Passage(); // show final colored result in passage
+}
+
+function p6Reset(){
+  p6Submitted   = false;
+  p6ActiveBlank = 0;
+  p6Blanks.forEach(b => { b.chosen = null; });
+  renderP6Passage();
 }
 
 // Meaning question (traditional)
