@@ -1782,23 +1782,34 @@ function speakCurrent(){
   const w = studyQueue[studyIdx];
   if(w) speakWord(w.word);
 }
+// Pre-load voices as soon as browser is ready
+let cachedVoice = null;
+function loadVoice(){
+  const voices = speechSynthesis.getVoices();
+  if(!voices.length) return; // not ready yet
+  cachedVoice = voices.find(v=>v.lang==='en-US' && v.name.toLowerCase().includes('google'))
+             || voices.find(v=>v.lang==='en-US')
+             || voices.find(v=>v.lang.startsWith('en'))
+             || null;
+}
+// voiceschanged fires when voices are ready (required on Chrome/mobile)
+speechSynthesis.addEventListener('voiceschanged', loadVoice);
+loadVoice(); // also try immediately (works on Firefox/Safari)
+
 function speakWord(word){
-  if(!word||word==='—') return;
+  if(!word || word==='—') return;
   speechSynthesis.cancel();
-  // 350ms silence before speaking — ensures full word is heard from the start
   setTimeout(()=>{
-    const utt = new SpeechSynthesisUtterance(word);
-    utt.lang   = 'en-US';
-    utt.rate   = 0.7;   // slow and clear — every syllable audible
-    utt.pitch  = 1;
-    utt.volume = 1;
-    const voices = speechSynthesis.getVoices();
-    const enVoice = voices.find(v=>v.lang==='en-US' && v.name.toLowerCase().includes('google'))
-                 || voices.find(v=>v.lang==='en-US')
-                 || voices.find(v=>v.lang.startsWith('en'));
-    if(enVoice) utt.voice = enVoice;
+    // Re-try loading voice in case it wasn't ready at page load
+    if(!cachedVoice) loadVoice();
+    const utt    = new SpeechSynthesisUtterance(word);
+    utt.lang     = 'en-US';
+    utt.rate     = 0.72;
+    utt.pitch    = 1;
+    utt.volume   = 1;
+    if(cachedVoice) utt.voice = cachedVoice;
     speechSynthesis.speak(utt);
-  }, 350);
+  }, 400);
 }
 
 // ════════════════════════════════════════════
