@@ -292,20 +292,33 @@ svg.donut{transform:rotate(-90deg);}
 <div id="screen-setup" class="screen">
   <div class="setup-wrap">
     <div class="card">
-      <div style="font-size:36px;margin-bottom:12px;text-align:center">⚙️</div>
-      <h2 style="text-align:center">Cài đặt lần đầu</h2>
-      <p style="text-align:center">Kết nối JSONBin để lưu từ vựng TOEIC trên cloud — học sinh trên mọi thiết bị đều thấy cùng nội dung.</p>
-      <div class="setup-field"><label>JSONBin Secret Key</label><input id="s-key" type="text" placeholder="$2b$10$..."></div>
-      <div class="setup-field"><label>Anthropic API Key <span style="color:var(--text2);font-weight:400;text-transform:none;font-size:12px">(tuỳ chọn — để dùng AI)</span></label><input id="s-claude" type="text" placeholder="sk-ant-..."></div>
-      <div class="setup-field"><label>Mật khẩu Admin</label><input id="s-pwd" type="password" placeholder="Đặt mật khẩu bảo mật"></div>
-      <button class="btn btn-p" style="width:100%;justify-content:center;margin-top:6px" onclick="doSetup()">
-        <span id="setup-btn-txt">Hoàn tất cài đặt →</span>
+      <div style="font-size:36px;margin-bottom:12px;text-align:center">🎓</div>
+      <h2 style="text-align:center;margin-bottom:6px">TOEIC Vocab Master</h2>
+      <p style="text-align:center;margin-bottom:22px">Chỉ cần đặt mật khẩu là dùng được ngay — không cần tài khoản, không cần internet.</p>
+
+      <div class="setup-field">
+        <label>Mật khẩu Admin <span style="color:var(--red)">*</span></label>
+        <input id="s-pwd" type="password" placeholder="Đặt mật khẩu để vào Admin Panel" onkeydown="if(event.key==='Enter')doSetup()">
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:16px">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Tuỳ chọn — Tính năng AI &amp; Cloud Sync</div>
+        <div class="setup-field">
+          <label>Anthropic API Key <span style="color:var(--text2);font-weight:400;text-transform:none">(để dùng AI Generate &amp; Quiz thông minh)</span></label>
+          <input id="s-claude" type="text" placeholder="sk-ant-...">
+        </div>
+        <div class="setup-field">
+          <label>JSONBin Secret Key <span style="color:var(--text2);font-weight:400;text-transform:none">(để đồng bộ nhiều thiết bị)</span></label>
+          <input id="s-key" type="text" placeholder="$2b$10$... — lấy miễn phí tại jsonbin.io">
+        </div>
+      </div>
+
+      <button class="btn btn-p" style="width:100%;justify-content:center;margin-top:4px" onclick="doSetup()">
+        <span id="setup-btn-txt">Bắt đầu →</span>
       </button>
       <div id="setup-err" style="color:var(--red);font-size:13px;margin-top:10px;display:none;text-align:center"></div>
-      <div class="api-note">
-        📌 <strong>Cách lấy JSONBin Key (miễn phí):</strong><br>
-        Vào <a href="https://jsonbin.io" target="_blank">jsonbin.io</a> → Sign up → Dashboard → API Keys → copy <strong>Secret Access Key</strong><br><br>
-        🤖 <strong>Anthropic API Key:</strong> <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys
+      <div style="margin-top:16px;text-align:center">
+        <button class="btn btn-s btn-sm" onclick="hardReset()" style="font-size:11px;opacity:.5">🔄 Xoá dữ liệu &amp; bắt đầu lại</button>
       </div>
     </div>
   </div>
@@ -674,10 +687,10 @@ svg.donut{transform:rotate(-90deg);}
 // CONFIG & CONSTANTS
 // ════════════════════════════════════════════
 const JSONBIN_URL = 'https://api.jsonbin.io/v3/b';
-const CLAUDE_URL = 'https://api.anthropic.com/v1/messages';
-const CFG_KEY   = 'toeicvocab_cfg';
-const PROG_KEY  = 'toeicvocab_prog';
-const CLOUD_KEY = 'toeicvocab_cloud'; // local cache for instant startup
+const CLAUDE_URL  = 'https://api.anthropic.com/v1/messages';
+const CFG_KEY     = 'toeicvocab_cfg';
+const PROG_KEY    = 'toeicvocab_prog';
+const CLOUD_KEY   = 'toeicvocab_cloud'; // primary local storage
 
 let CFG = {}; // {binId, binKey, claudeKey, adminPwd}
 let CLOUD = {}; // {topics:[...]}
@@ -696,28 +709,45 @@ const TOEIC_PARTS = ['Part 5 – Incomplete Sentences', 'Part 6 – Text Complet
 // ════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════
-async function init(){
-  CFG  = loadJson(CFG_KEY,   {});
-  PROG = loadJson(PROG_KEY,  {});
+function init(){
+  // Fully synchronous — zero network calls on startup
+  CFG   = loadJson(CFG_KEY,   {});
+  PROG  = loadJson(PROG_KEY,  {});
+  CLOUD = loadJson(CLOUD_KEY, null);
 
-  if(!CFG.binKey){ showScreen('screen-setup'); hideOverlay(); return; }
+  // ── Migrate old CFG formats ──
+  // Old format had binKey+binId but no adminPwd
+  if(CFG.binKey && !CFG.adminPwd){
+    CFG.adminPwd = 'admin';
+    saveJson(CFG_KEY, CFG);
+  }
+  // Old format stored CLOUD inside CFG (very old builds)
+  if(CFG.topics && !CLOUD){
+    CLOUD = {topics: CFG.topics};
+    saveJson(CLOUD_KEY, CLOUD);
+  }
 
-  // Load local cache FIRST → instant startup, no waiting for network
-  const cached = loadJson(CLOUD_KEY, null);
-  if(cached && cached.topics){
-    CLOUD = cached;
-    loadProgress();
-    showStudent();
+  // First run — show setup
+  if(!CFG.adminPwd){
+    showScreen('screen-setup');
     hideOverlay();
-    // Sync from server quietly in background
+    return;
+  }
+
+  // Ensure we have vocabulary data
+  if(!CLOUD || !Array.isArray(CLOUD.topics) || CLOUD.topics.length === 0){
+    CLOUD = {topics: getDefaultTopics()};
+    saveJson(CLOUD_KEY, CLOUD);
+  }
+
+  loadProgress();
+  showStudent();
+  hideOverlay();
+
+  // JSONBin cloud sync — optional, background only
+  if(CFG.binId && CFG.binKey){
+    document.getElementById('sync-btn').style.display = '';
     backgroundSync();
-  } else {
-    // First time or cache cleared → must wait for server
-    setMsg('Đang tải dữ liệu...');
-    try { await syncCloud(); } catch(e){ CLOUD = {topics:[]}; }
-    loadProgress();
-    showStudent();
-    hideOverlay();
   }
 }
 
@@ -748,32 +778,47 @@ function setMsg(m){ document.getElementById('ov-msg').textContent = m; }
 // ════════════════════════════════════════════
 // SETUP
 // ════════════════════════════════════════════
-async function doSetup(){
-  const key = document.getElementById('s-key').value.trim();
+function doSetup(){
   const claude = document.getElementById('s-claude').value.trim();
-  const pwd = document.getElementById('s-pwd').value.trim();
-  const err = document.getElementById('setup-err');
-  if(!key||!pwd){ err.style.display='block'; err.textContent='Nhập đủ JSONBin Key và mật khẩu!'; return; }
-  document.getElementById('setup-btn-txt').innerHTML='<span class="spinner"></span>';
+  const pwd    = document.getElementById('s-pwd').value.trim();
+  const binkey = document.getElementById('s-key').value.trim();   // now optional
+  const err    = document.getElementById('setup-err');
+
+  if(!pwd){ err.style.display='block'; err.textContent='Vui lòng đặt mật khẩu admin!'; return; }
+
+  // Save config — JSONBin is optional
+  CFG = { adminPwd: pwd };
+  if(claude) CFG.claudeKey = claude;
+  if(binkey) CFG.binKey    = binkey;   // will be used to create bin in background if provided
+  saveJson(CFG_KEY, CFG);
+
+  // Seed local data and go — no network needed
+  CLOUD = { topics: getDefaultTopics() };
+  saveJson(CLOUD_KEY, CLOUD);
+  PROG = {};
+
+  // If JSONBin key provided, create bin in background (non-blocking)
+  if(binkey){ setupJsonBinInBackground(binkey, claude, pwd); }
+
+  showStudent();
+  hideOverlay();
+}
+
+async function setupJsonBinInBackground(key, claude, pwd){
   try {
     const res = await fetch(JSONBIN_URL, {
       method:'POST',
       headers:{'Content-Type':'application/json','X-Master-Key':key,'X-Bin-Name':'toeic-vocab','X-Bin-Private':'false'},
-      body: JSON.stringify({topics: getDefaultTopics()})
+      body: JSON.stringify(CLOUD)
     });
-    if(!res.ok) throw new Error('JSONBin error');
+    if(!res.ok) return;
     const d = await res.json();
-    CFG = {binId: d.metadata.id, binKey: key, claudeKey: claude, adminPwd: pwd};
+    CFG.binId  = d.metadata.id;
+    CFG.binKey = key;
     saveJson(CFG_KEY, CFG);
-    CLOUD = {topics: getDefaultTopics()};
-    saveJson(CLOUD_KEY, CLOUD); // prime the local cache immediately
-    PROG = {};
-    showStudent();
-    hideOverlay();
-  } catch(e){
-    err.style.display='block'; err.textContent='Lỗi kết nối JSONBin. Kiểm tra lại key!';
-  }
-  document.getElementById('setup-btn-txt').textContent='Hoàn tất cài đặt →';
+    document.getElementById('sync-btn').style.display = '';
+    showToast('☁️ Cloud sync đã được kích hoạt!');
+  } catch(e){ /* JSONBin optional — fail silently */ }
 }
 
 function getDefaultTopics(){
@@ -812,31 +857,43 @@ function getDefaultTopics(){
 // ════════════════════════════════════════════
 // CLOUD SYNC (JSONBin)
 // ════════════════════════════════════════════
-async function syncCloud(pull=true){
-  if(!CFG.binId||!CFG.binKey) return;
+// Save CLOUD to localStorage immediately (primary storage)
+// Then push to JSONBin if configured (secondary/optional cloud backup)
+function saveCloud(){
+  saveJson(CLOUD_KEY, CLOUD);
+}
+
+async function syncCloud(pull=false){
+  // Always save locally first
+  saveCloud();
+  // Push to JSONBin only if configured
+  if(!CFG.binId || !CFG.binKey) return;
   if(pull){
-    const res = await fetch(`${JSONBIN_URL}/${CFG.binId}/latest`,
-      {headers:{'X-Master-Key':CFG.binKey}});
-    if(!res.ok) throw new Error('sync fail');
-    const d = await res.json();
-    CLOUD = d.record;
-    saveJson(CLOUD_KEY, CLOUD); // cache locally for fast next startup
+    try {
+      const res = await fetch(`${JSONBIN_URL}/${CFG.binId}/latest`,
+        {headers:{'X-Master-Key':CFG.binKey}});
+      if(!res.ok) return;
+      const d = await res.json();
+      CLOUD = d.record;
+      saveCloud();
+    } catch(e){ /* network error — keep local data */ }
   } else {
-    await fetch(`${JSONBIN_URL}/${CFG.binId}`,{
-      method:'PUT',
-      headers:{'Content-Type':'application/json','X-Master-Key':CFG.binKey},
-      body:JSON.stringify(CLOUD)
-    });
-    saveJson(CLOUD_KEY, CLOUD); // keep cache in sync
+    try {
+      await fetch(`${JSONBIN_URL}/${CFG.binId}`,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json','X-Master-Key':CFG.binKey},
+        body:JSON.stringify(CLOUD)
+      });
+    } catch(e){ /* cloud push failed — local data still safe */ }
   }
 }
 async function manualSync(){
   const btn=document.getElementById('sync-btn'); btn.disabled=true;
   try {
-    await syncCloud();
+    await syncCloud(true); // pull from cloud
     renderTopicGrid(); updateHeader(); updateProgress();
     showToast('✅ Đã đồng bộ!');
-  } catch(e){ showToast('❌ Lỗi đồng bộ — đang dùng dữ liệu cache'); }
+  } catch(e){ showToast('❌ Lỗi mạng — dữ liệu local vẫn an toàn'); }
   btn.disabled=false;
 }
 
@@ -864,12 +921,15 @@ function doLogout(){ showScreen('screen-login'); }
 function showSettingsInfo(){
   const el = document.getElementById('set-info');
   if(!el) return;
-  const hasKey = CFG.claudeKey && CFG.claudeKey.length > 10;
-  el.innerHTML = [
-    `<span style="color:var(--text2)">JSONBin Bin ID:</span> <span style="font-family:'JetBrains Mono',monospace;color:var(--blue2)">${CFG.binId||'chưa có'}</span>`,
-    `<span style="color:var(--text2)">Anthropic Key:</span> <span style="color:${hasKey?'var(--green)":"var(--red)"}">${hasKey ? '✅ Đã cài đặt ('+CFG.claudeKey.slice(0,12)+'...)' : '❌ Chưa có'}</span>`,
-    `<span style="color:var(--text2)">JSONBin Key:</span> <span style="color:var(--text)"> ${CFG.binKey ? '✅ Đã cài đặt' : '❌ Chưa có'}</span>`,
-  ].join('<br>');
+  const hasClaudeKey = CFG.claudeKey && CFG.claudeKey.length > 10;
+  const claudeStatus = hasClaudeKey ? '✅ ' + CFG.claudeKey.slice(0,16) + '...' : '❌ Chưa có';
+  const claudeColor  = hasClaudeKey ? 'var(--green)' : 'var(--red)';
+  const binStatus    = CFG.binKey ? '✅ Đã cài đặt' : '❌ Chưa có';
+  const binId        = CFG.binId || 'chưa có';
+  el.innerHTML =
+    '<div>JSONBin ID: <code style="color:var(--blue2)">' + binId + '</code></div>' +
+    '<div>Anthropic Key: <span style="color:' + claudeColor + '">' + claudeStatus + '</span></div>' +
+    '<div>JSONBin Key: <span>' + binStatus + '</span></div>';
 }
 
 function saveSettings(){
@@ -882,6 +942,8 @@ function saveSettings(){
   if(binkey) CFG.binKey    = binkey;
   if(pwd)    CFG.adminPwd  = pwd;
   saveJson(CFG_KEY, CFG);
+  // If JSONBin key added for first time, try to create bin
+  if(binkey && !CFG.binId) setupJsonBinInBackground(binkey, CFG.claudeKey||'', CFG.adminPwd);
 
   // Clear input fields
   document.getElementById('set-claude').value = '';
@@ -898,8 +960,13 @@ function saveSettings(){
 }
 
 function resetAll(){
-  localStorage.removeItem(CFG_KEY);
-  localStorage.removeItem(PROG_KEY);
+  if(confirm('Xoá toàn bộ cài đặt và dữ liệu? Không thể hoàn tác!')){
+    hardReset();
+  }
+}
+
+function hardReset(){
+  [CFG_KEY, PROG_KEY, CLOUD_KEY].forEach(k => localStorage.removeItem(k));
   location.reload();
 }
 function showAdminPanel(){
@@ -1586,14 +1653,14 @@ async function saveTopic(){
   } else {
     CLOUD.topics.push({id:'t'+Date.now(),name,emoji,color,words:[]});
   }
-  await syncCloud(false);
+  saveCloud(); syncCloud(false);
   renderAdminTopics(); populateTopicSelects();
   closeTopicForm(); showToast('✅ Đã lưu chủ đề!');
 }
 async function deleteTopic(id){
   if(!confirm('Xoá chủ đề này?')) return;
   CLOUD.topics=(CLOUD.topics||[]).filter(t=>t.id!==id);
-  await syncCloud(false);
+  saveCloud(); syncCloud(false);
   renderAdminTopics(); populateTopicSelects(); showToast('✅ Đã xoá!');
 }
 
@@ -1632,13 +1699,13 @@ async function saveWord(){
   if(!t.words) t.words=[];
   const w = {word, phonetic:document.getElementById('wf-ph').value.trim(), type:document.getElementById('wf-type').value.trim(), definition:document.getElementById('wf-def').value.trim(), example:document.getElementById('wf-ex').value.trim(), vietnamese:document.getElementById('wf-vn').value.trim()};
   t.words.push(w);
-  await syncCloud(false);
+  saveCloud(); syncCloud(false);
   loadWords(); closeWordForm(); showToast('✅ Đã thêm từ!');
 }
 async function deleteWord(tid, idx){
   const t=(CLOUD.topics||[]).find(x=>x.id===tid); if(!t) return;
   t.words.splice(idx,1);
-  await syncCloud(false);
+  saveCloud(); syncCloud(false);
   loadWords(); showToast('✅ Đã xoá từ!');
 }
 
@@ -1657,7 +1724,7 @@ async function handleCSV(input){
     const [word,phonetic,type,definition,example,vietnamese] = line.split(',').map(s=>s.trim().replace(/^"|"$/g,''));
     if(word && !t.words.find(w=>w.word===word)){ t.words.push({word,phonetic,type,definition,example,vietnamese}); added++; }
   });
-  await syncCloud(false);
+  saveCloud(); syncCloud(false);
   document.getElementById('import-result').style.display='block';
   document.getElementById('import-result').textContent=`✅ Đã import ${added} từ!`;
   showToast(`✅ Import ${added} từ thành công!`);
@@ -1717,7 +1784,7 @@ async function aiSaveWords(){
   if(!t.words) t.words=[];
   let added=0;
   aiGenBuffer.forEach(w=>{ if(w.word && !t.words.find(x=>x.word===w.word)){ t.words.push(w); added++; } });
-  await syncCloud(false);
+  saveCloud(); syncCloud(false);
   showToast(`✅ Đã lưu ${added} từ!`);
   aiGenBuffer=[]; document.getElementById('aigen-result').style.display='none';
 }
