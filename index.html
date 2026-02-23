@@ -52,8 +52,8 @@ label{font-size:11px;color:var(--text2);display:block;margin-bottom:6px;letter-s
 .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;}
 
 /* LOADING */
-#overlay{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9998;gap:16px;}
-#overlay.hidden{display:none;}
+#overlay{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9998;gap:16px;transition:opacity .25s ease,visibility .25s ease;}
+#overlay.hidden{opacity:0;visibility:hidden;pointer-events:none;}
 .ov-logo{font-family:'Sora',sans-serif;font-size:36px;font-weight:800;color:var(--blue);letter-spacing:-2px;}
 .ov-logo span{color:var(--teal);}
 .ov-msg{font-size:13px;color:var(--text2);}
@@ -675,8 +675,9 @@ svg.donut{transform:rotate(-90deg);}
 // ════════════════════════════════════════════
 const JSONBIN_URL = 'https://api.jsonbin.io/v3/b';
 const CLAUDE_URL = 'https://api.anthropic.com/v1/messages';
-const CFG_KEY = 'toeicvocab_cfg';
-const PROG_KEY = 'toeicvocab_prog';
+const CFG_KEY   = 'toeicvocab_cfg';
+const PROG_KEY  = 'toeicvocab_prog';
+const CLOUD_KEY = 'toeicvocab_cloud'; // local cache for instant startup
 
 let CFG = {}; // {binId, binKey, claudeKey, adminPwd}
 let CLOUD = {}; // {topics:[...]}
@@ -696,14 +697,49 @@ const TOEIC_PARTS = ['Part 5 – Incomplete Sentences', 'Part 6 – Text Complet
 // INIT
 // ════════════════════════════════════════════
 async function init(){
-  CFG = loadJson(CFG_KEY, {});
-  PROG = loadJson(PROG_KEY, {});
+  CFG  = loadJson(CFG_KEY,   {});
+  PROG = loadJson(PROG_KEY,  {});
+
   if(!CFG.binKey){ showScreen('screen-setup'); hideOverlay(); return; }
-  setMsg('Đang tải dữ liệu...');
-  try { await syncCloud(); } catch(e){ CLOUD = {topics:[]}; }
-  loadProgress();
-  showStudent();
-  hideOverlay();
+
+  // Load local cache FIRST → instant startup, no waiting for network
+  const cached = loadJson(CLOUD_KEY, null);
+  if(cached && cached.topics){
+    CLOUD = cached;
+    loadProgress();
+    showStudent();
+    hideOverlay();
+    // Sync from server quietly in background
+    backgroundSync();
+  } else {
+    // First time or cache cleared → must wait for server
+    setMsg('Đang tải dữ liệu...');
+    try { await syncCloud(); } catch(e){ CLOUD = {topics:[]}; }
+    loadProgress();
+    showStudent();
+    hideOverlay();
+  }
+}
+
+// Pull latest from JSONBin silently; refresh UI only if data changed
+async function backgroundSync(){
+  if(!CFG.binId||!CFG.binKey) return;
+  try {
+    const res = await fetch(`${JSONBIN_URL}/${CFG.binId}/latest`,
+      {headers:{'X-Master-Key':CFG.binKey}});
+    if(!res.ok) return;
+    const d = await res.json();
+    const fresh = d.record;
+    // Only re-render if content actually changed
+    if(JSON.stringify(fresh) !== JSON.stringify(CLOUD)){
+      CLOUD = fresh;
+      saveJson(CLOUD_KEY, CLOUD);
+      renderTopicGrid();
+      updateHeader();
+      updateProgress();
+      showToast('🔄 Dữ liệu đã được cập nhật');
+    }
+  } catch(e){ /* fail silently */ }
 }
 
 function hideOverlay(){ document.getElementById('overlay').classList.add('hidden'); document.getElementById('app').style.display=''; }
@@ -730,6 +766,7 @@ async function doSetup(){
     CFG = {binId: d.metadata.id, binKey: key, claudeKey: claude, adminPwd: pwd};
     saveJson(CFG_KEY, CFG);
     CLOUD = {topics: getDefaultTopics()};
+    saveJson(CLOUD_KEY, CLOUD); // prime the local cache immediately
     PROG = {};
     showStudent();
     hideOverlay();
@@ -778,18 +815,28 @@ function getDefaultTopics(){
 async function syncCloud(pull=true){
   if(!CFG.binId||!CFG.binKey) return;
   if(pull){
-    const res = await fetch(`${JSONBIN_URL}/${CFG.binId}/latest`,{headers:{'X-Master-Key':CFG.binKey}});
+    const res = await fetch(`${JSONBIN_URL}/${CFG.binId}/latest`,
+      {headers:{'X-Master-Key':CFG.binKey}});
     if(!res.ok) throw new Error('sync fail');
     const d = await res.json();
     CLOUD = d.record;
+    saveJson(CLOUD_KEY, CLOUD); // cache locally for fast next startup
   } else {
-    await fetch(`${JSONBIN_URL}/${CFG.binId}`,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':CFG.binKey},body:JSON.stringify(CLOUD)});
+    await fetch(`${JSONBIN_URL}/${CFG.binId}`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Master-Key':CFG.binKey},
+      body:JSON.stringify(CLOUD)
+    });
+    saveJson(CLOUD_KEY, CLOUD); // keep cache in sync
   }
 }
 async function manualSync(){
   const btn=document.getElementById('sync-btn'); btn.disabled=true;
-  try { await syncCloud(); renderTopicGrid(); updateHeader(); showToast('✅ Đã đồng bộ!'); }
-  catch(e){ showToast('❌ Lỗi đồng bộ'); }
+  try {
+    await syncCloud();
+    renderTopicGrid(); updateHeader(); updateProgress();
+    showToast('✅ Đã đồng bộ!');
+  } catch(e){ showToast('❌ Lỗi đồng bộ — đang dùng dữ liệu cache'); }
   btn.disabled=false;
 }
 
