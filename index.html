@@ -1456,37 +1456,102 @@ Write the ${genre.label} passage now. Include ${numBlanksStr} exactly where each
   return clean;
 }
 function buildFallbackPassage(blankWords, genre){
-  // Build a readable passage using actual word definitions as context,
-  // with [BLANK_N] tokens exactly where each word should appear.
-  const b = blankWords;  // array of word objects
-  const n = b.length;
-  const f = (i) => `[BLANK_${i}]`; // token placeholder
+  const n = blankWords.length;
+  const B0 = '[BLANK_0]';
+  const B1 = '[BLANK_1]';
+  const B2 = '[BLANK_2]';
+  const B3 = '[BLANK_3]';
 
-  const map = {
-    Email: `To: All Staff\nFrom: Human Resources\nSubject: Important Update\n\nDear Team,\n\nWe would like to remind everyone to ${f(0)} the updated procedures effective next week.${n>1?' All managers are expected to '+f(1)+' their teams accordingly.':''}${n>2?' Please ensure your '+f(2)+' is submitted to your supervisor by Friday.':''}${n>3?' For further details, do not hesitate to contact HR regarding the '+f(3)+'.':''}\n\nThank you for your cooperation.\n\nBest regards,\nHuman Resources`,
+  function build(parts){ return parts.filter(Boolean).join(''); }
 
-    Memo: `MEMO\nTo: All Department Heads\nFrom: Operations Manager\nDate: This Monday\nRe: Q4 Procedures\n\nThis memo is to confirm that the ${f(0)} process has been approved.${n>1?' Managers should '+f(1)+' their teams about the new requirements.':''}${n>2?' All staff are required to ${f(2)} with the updated guidelines.':''}${n>3?' Please review the attached '+f(3)+' for additional information.':''}`,
-
-    Announcement: `COMPANY ANNOUNCEMENT\n\nWe are pleased to inform all staff about an important ${f(0)} taking place next week.${n>1?' This event will help employees '+f(1)+' their professional skills.':''}${n>2?' Your '+f(2)+' is greatly appreciated and encouraged.':''}${n>3?' A detailed ${f(3)} will be shared with all participants in advance.':''}\n\nWe look forward to your participation.`,
-
-    Notice: `NOTICE TO ALL EMPLOYEES\n\nPlease be advised that all staff must ${f(0)} the updated safety regulations starting next Monday.${n>1?' The ${f(1)} procedure will be reviewed at the next department meeting.':''}${n>2?' Employees who fail to ${f(2)} with the new policy may face disciplinary action.':''}${n>3?' For questions, please refer to the official ${f(3)} available on the company intranet.':''}\n\nThank you for your cooperation.`,
-
-    Article: `BUSINESS IN FOCUS\n\nOrganisations across the region are working to improve their ${f(0)} in response to recent market changes.${n>1?' Companies that ${f(1)} their operations effectively have reported stronger employee satisfaction scores.':''}${n>2?' According to one industry report, firms that prioritise ${f(2)} tend to outperform their competitors.':''}${n>3?' Experts recommend that all businesses review their ${f(3)} strategies at least once per quarter.':''}`,
-
-    Leaflet: `BOOST YOUR WORKPLACE PERFORMANCE\n\n• Improve your ${f(0)} with our proven training programme${n>1?'\n• Learn how to '+f(1)+' effectively in any business environment':''}${n>2?'\n• Develop a stronger ${f(2)} culture within your team':''}${n>3?'\n• Gain practical skills in '+f(3)+' to advance your career':''}\n\nContact us today to register your interest.`,
-
-    Advertisement: `TAKE YOUR CAREER TO THE NEXT LEVEL\n\nAre you looking to ${f(0)} in a fast-paced, professional environment?${n>1?' Our platform helps you '+f(1)+' your goals faster and more efficiently.':''}${n>2?' With built-in support for ${f(2)}, success has never been more accessible.':''}${n>3?' Start your journey today and experience the benefits of expert ${f(3)}.':''} Contact us now.`,
-
-    Report: `QUARTERLY PERFORMANCE REVIEW\n\nThis report examines the organisation\'s ability to ${f(0)} across key operational areas.${n>1?' The data confirms that teams which ${f(1)} consistently show higher productivity rates.':''}${n>2?' Management recommends that all departments focus on improving their ${f(2)} processes in the coming quarter.':''}${n>3?' Full details regarding ${f(3)} will be presented at the next board meeting.':''}`,
-
-    Conversation: `A: Have you had a chance to review the ${f(0)} for tomorrow\'s session?\nB: Yes, I went through it this morning.${n>1?' I noticed we need to '+f(1)+' a few items before the meeting starts.':''}\nA: That\'s right. Could you make sure the team is aware?\nB: Of course.${n>2?' I\'ll send a '+f(2)+' to everyone right away.':''}${n>3?'\nA: Perfect. Also, please remember to '+f(3)+' all supporting documents before noon.':''}`,
-
-    Talk: `Good morning, everyone, and thank you for joining today\'s ${f(0)}.${n>1?' I\'d like to take this opportunity to '+f(1)+' a few important updates with the group.':''} As many of you know, we are implementing new processes this quarter.${n>2?' All team members are expected to '+f(2)+' the revised workflow as soon as possible.':''}${n>3?' A full overview of our ${f(3)} targets will be shared at the end of this session.':''} Thank you for your attention.`,
-
-    Description: `The photograph shows a busy professional office setting. In the foreground, an employee is carefully reviewing a ${f(0)} at their desk.${n>1?' In the background, a group of colleagues appears to be engaged in a ${f(1)}.':''}${n>2?' A large board displaying the department\'s ${f(2)} is clearly visible on the wall.':''}${n>3?' To the right, another staff member is working on a ${f(3)} at their computer station.':''}`,
+  const templates = {
+    Email: build([
+      'To: All Staff\nFrom: Human Resources\nSubject: Important Update\n\n',
+      'Dear Team,\n\nWe would like to remind everyone to ', B0, ' the updated procedures effective next week.',
+      n>1 ? ' All managers are expected to '+B1+' their teams accordingly.' : '',
+      n>2 ? ' Please ensure your '+B2+' is submitted to your supervisor by Friday.' : '',
+      n>3 ? ' For further details, do not hesitate to contact HR regarding the '+B3+'.' : '',
+      '\n\nThank you for your cooperation.\n\nBest regards,\nHuman Resources'
+    ]),
+    Memo: build([
+      'MEMO\nTo: All Department Heads\nFrom: Operations Manager\nDate: This Monday\nRe: Q4 Procedures\n\n',
+      'This memo is to confirm that the ', B0, ' process has been approved.',
+      n>1 ? ' Managers should '+B1+' their teams about the new requirements.' : '',
+      n>2 ? ' All staff are required to '+B2+' with the updated guidelines.' : '',
+      n>3 ? ' Please review the attached '+B3+' for additional information.' : ''
+    ]),
+    Announcement: build([
+      'COMPANY ANNOUNCEMENT\n\n',
+      'We are pleased to inform all staff about an important ', B0, ' taking place next week.',
+      n>1 ? ' This event will help employees '+B1+' their professional skills.' : '',
+      n>2 ? ' Your '+B2+' is greatly appreciated and encouraged.' : '',
+      n>3 ? ' A detailed '+B3+' will be shared with all participants in advance.' : '',
+      '\n\nWe look forward to your participation.'
+    ]),
+    Notice: build([
+      'NOTICE TO ALL EMPLOYEES\n\n',
+      'Please be advised that all staff must ', B0, ' the updated safety regulations starting next Monday.',
+      n>1 ? ' The '+B1+' procedure will be reviewed at the next department meeting.' : '',
+      n>2 ? ' Employees who fail to '+B2+' with the new policy may face disciplinary action.' : '',
+      n>3 ? ' For questions, please refer to the official '+B3+' available on the company intranet.' : '',
+      '\n\nThank you for your cooperation.'
+    ]),
+    Article: build([
+      'BUSINESS IN FOCUS\n\n',
+      'Organisations across the region are working to improve their ', B0, ' in response to recent market changes.',
+      n>1 ? ' Companies that '+B1+' their operations effectively have reported stronger employee satisfaction scores.' : '',
+      n>2 ? ' According to one industry report, firms that prioritise '+B2+' tend to outperform their competitors.' : '',
+      n>3 ? ' Experts recommend that all businesses review their '+B3+' strategies at least once per quarter.' : ''
+    ]),
+    Leaflet: build([
+      'BOOST YOUR WORKPLACE PERFORMANCE\n\n',
+      '\u2022 Improve your ', B0, ' with our proven training programme',
+      n>1 ? '\n\u2022 Learn how to '+B1+' effectively in any business environment' : '',
+      n>2 ? '\n\u2022 Develop a stronger '+B2+' culture within your team' : '',
+      n>3 ? '\n\u2022 Gain practical skills in '+B3+' to advance your career' : '',
+      '\n\nContact us today to register your interest.'
+    ]),
+    Advertisement: build([
+      'TAKE YOUR CAREER TO THE NEXT LEVEL\n\n',
+      'Are you looking to ', B0, ' in a fast-paced, professional environment?',
+      n>1 ? ' Our platform helps you '+B1+' your goals faster and more efficiently.' : '',
+      n>2 ? ' With built-in support for '+B2+', success has never been more accessible.' : '',
+      n>3 ? ' Start your journey today and experience the benefits of expert '+B3+'.' : '',
+      ' Contact us now.'
+    ]),
+    Report: build([
+      'QUARTERLY PERFORMANCE REVIEW\n\n',
+      "This report examines the organisation's ability to ", B0, ' across key operational areas.',
+      n>1 ? ' The data confirms that teams which '+B1+' consistently show higher productivity rates.' : '',
+      n>2 ? ' Management recommends that all departments focus on improving their '+B2+' processes in the coming quarter.' : '',
+      n>3 ? ' Full details regarding '+B3+' will be presented at the next board meeting.' : ''
+    ]),
+    Conversation: build([
+      'A: Have you had a chance to review the ', B0, " for tomorrow's session?\n",
+      'B: Yes, I went through it this morning.',
+      n>1 ? ' I noticed we need to '+B1+' a few items before the meeting starts.' : '',
+      "\nA: That's right. Could you make sure the team is aware?\n",
+      "B: Of course.",
+      n>2 ? " I'll send a "+B2+' to everyone right away.' : '',
+      n>3 ? '\nA: Perfect. Also, please remember to '+B3+' all supporting documents before noon.' : ''
+    ]),
+    Talk: build([
+      "Good morning, everyone, and thank you for joining today's ", B0, '.',
+      n>1 ? " I'd like to take this opportunity to "+B1+' a few important updates with the group.' : '',
+      ' As many of you know, we are implementing new processes this quarter.',
+      n>2 ? ' All team members are expected to '+B2+' the revised workflow as soon as possible.' : '',
+      n>3 ? ' A full overview of our '+B3+' targets will be shared at the end of this session.' : '',
+      ' Thank you for your attention.'
+    ]),
+    Description: build([
+      'The photograph shows a busy professional office setting. In the foreground, an employee is carefully reviewing a ', B0, ' at their desk.',
+      n>1 ? ' In the background, a group of colleagues appears to be engaged in a '+B1+'.' : '',
+      n>2 ? " A large board displaying the department's "+B2+' is clearly visible on the wall.' : '',
+      n>3 ? ' To the right, another staff member is working on a '+B3+' at their computer station.' : ''
+    ]),
   };
 
-  return map[genre.label] || map['Email'];
+  return templates[genre.label] || templates['Email'];
 }
 function renderP6Passage(){
   // Replace blank tokens: answered ones show the word, current blank shows underline, future show grey underline
@@ -1508,8 +1573,7 @@ function renderP6Passage(){
 }
 
 function renderP6Options(){
-  if(p6BlankIdx >= p6Blanks.length){ 
-    // All blanks answered — show next question button after brief pause
+  if(p6BlankIdx >= p6Blanks.length){
     document.getElementById('quiz-opts').innerHTML='';
     setTimeout(nextQ, 1200);
     return;
@@ -1518,27 +1582,37 @@ function renderP6Options(){
   const blank = p6Blanks[p6BlankIdx];
   const optsEl = document.getElementById('quiz-opts');
   optsEl.style.display='grid';
+  // Use data-idx to avoid any quote/escape issues with word strings in onclick
   optsEl.innerHTML = blank.opts.map((o,i)=>`
-    <button class="q-opt" data-val="${o.word}" onclick="checkP6MCQ(this,'${o.word}','${blank.word.word}')">
+    <button class="q-opt" data-idx="${i}" onclick="checkP6MCQ(this,${i})">
       <div class="q-opt-inner"><span class="opt-letter">${'ABCD'[i]}</span>${o.word}</div>
     </button>`).join('');
 }
 
-function checkP6MCQ(btn, chosen, correct){
+function checkP6MCQ(btn, optIdx){
+  const blank   = p6Blanks[p6BlankIdx];
+  const chosen  = blank.opts[optIdx].word;   // word the student picked
+  const correct = blank.word.word;            // correct answer from word object
+
   const opts = document.querySelectorAll('.q-opt');
   opts.forEach(o=>o.classList.add('disabled'));
   quizTotal++;
   p6Blanks[p6BlankIdx].answered = true;
   p6Blanks[p6BlankIdx].chosen = chosen;
-  if(chosen===correct){
+
+  if(chosen === correct){
     btn.classList.add('correct'); quizCorrect++;
-    speakWord(correct); // Bug 4: auto-read correct answer
+    speakWord(correct);
   } else {
     btn.classList.add('wrong'); quizWrong++;
-    opts.forEach(o=>{ if(o.getAttribute('data-val')===correct) o.classList.add('reveal'); });
+    // Highlight the correct option by matching word value
+    opts.forEach(o=>{
+      const idx = parseInt(o.getAttribute('data-idx'));
+      if(blank.opts[idx] && blank.opts[idx].word === correct) o.classList.add('reveal');
+    });
   }
   updateQuizStats();
-  renderP6Passage(); // update passage to show answered blank
+  renderP6Passage();
   p6BlankIdx++;
   setTimeout(renderP6Options, 1000);
 }
