@@ -1726,7 +1726,7 @@ function checkMCQ(btn, chosen, correct, wordToSpeak){
     });
   }
   updateQuizStats();
-  setTimeout(nextQ, 1400);
+  setTimeout(nextQ, 1900); // enough time for speakWord to finish
 }
 
 function checkFillBlank(){/* fillblank placeholder */}
@@ -1782,34 +1782,49 @@ function speakCurrent(){
   const w = studyQueue[studyIdx];
   if(w) speakWord(w.word);
 }
-// Pre-load voices as soon as browser is ready
-let cachedVoice = null;
+// ════════════════════════════════════════════
+// SPEECH — robust queue to prevent cancel collisions
+// ════════════════════════════════════════════
+let cachedVoice  = null;
+let speakTimer   = null;   // pending speak timeout
+let speakLock    = false;  // true while TTS is speaking
+
 function loadVoice(){
   const voices = speechSynthesis.getVoices();
-  if(!voices.length) return; // not ready yet
+  if(!voices.length) return;
   cachedVoice = voices.find(v=>v.lang==='en-US' && v.name.toLowerCase().includes('google'))
              || voices.find(v=>v.lang==='en-US')
              || voices.find(v=>v.lang.startsWith('en'))
              || null;
 }
-// voiceschanged fires when voices are ready (required on Chrome/mobile)
 speechSynthesis.addEventListener('voiceschanged', loadVoice);
-loadVoice(); // also try immediately (works on Firefox/Safari)
+loadVoice();
 
-function speakWord(word){
+function speakWord(word, delay){
   if(!word || word==='—') return;
-  speechSynthesis.cancel();
-  setTimeout(()=>{
-    // Re-try loading voice in case it wasn't ready at page load
+  // Cancel any pending (not-yet-started) speak — but NOT one already playing
+  if(speakTimer){ clearTimeout(speakTimer); speakTimer = null; }
+
+  const wait = (delay !== undefined) ? delay : (speakLock ? 600 : 400);
+
+  speakTimer = setTimeout(()=>{
+    speakTimer = null;
     if(!cachedVoice) loadVoice();
-    const utt    = new SpeechSynthesisUtterance(word);
-    utt.lang     = 'en-US';
-    utt.rate     = 0.72;
-    utt.pitch    = 1;
-    utt.volume   = 1;
-    if(cachedVoice) utt.voice = cachedVoice;
-    speechSynthesis.speak(utt);
-  }, 400);
+    speechSynthesis.cancel();
+    // Small gap after cancel so browser resets cleanly
+    setTimeout(()=>{
+      const utt    = new SpeechSynthesisUtterance(word);
+      utt.lang     = 'en-US';
+      utt.rate     = 0.72;
+      utt.pitch    = 1;
+      utt.volume   = 1;
+      if(cachedVoice) utt.voice = cachedVoice;
+      utt.onstart = ()=>{ speakLock = true; };
+      utt.onend   = ()=>{ speakLock = false; };
+      utt.onerror = ()=>{ speakLock = false; };
+      speechSynthesis.speak(utt);
+    }, 80);
+  }, wait);
 }
 
 // ════════════════════════════════════════════
