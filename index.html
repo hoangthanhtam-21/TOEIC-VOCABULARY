@@ -1783,13 +1783,13 @@ function speakCurrent(){
   if(w) speakWord(w.word);
 }
 // ════════════════════════════════════════════
-// SPEECH ENGINE — cross-browser safe
+// SPEECH ENGINE — cross-browser, mobile-safe
 // ════════════════════════════════════════════
-let cachedVoice = null;
-let speakTimer  = null;
-let speakQueue  = [];   // words waiting to be spoken
+let cachedVoice   = null;
+let speakTimer    = null;
+let ttsUnlocked   = false;  // has user interaction unlocked TTS?
+let pendingWord   = null;   // word to speak after unlock
 
-// Load & cache the best available English voice
 function loadVoice(){
   const all = speechSynthesis.getVoices();
   if(!all.length) return false;
@@ -1803,38 +1803,64 @@ function loadVoice(){
   return true;
 }
 
-// voiceschanged: Chrome fires this async; Firefox fires sync
 if(typeof speechSynthesis !== 'undefined'){
-  speechSynthesis.addEventListener('voiceschanged', ()=>{ loadVoice(); });
+  speechSynthesis.addEventListener('voiceschanged', loadVoice);
   loadVoice();
 }
 
+// Unlock TTS on first user interaction (required on iOS/Android/some desktops)
+// Speaks a silent utterance to "warm up" the engine
+function unlockTTS(){
+  if(ttsUnlocked) return;
+  ttsUnlocked = true;
+  if(!cachedVoice) loadVoice();
+  // Speak a zero-volume, near-silent utterance to warm up the engine
+  const warm = new SpeechSynthesisUtterance(' ');
+  warm.volume = 0.001;
+  warm.rate   = 1;
+  warm.lang   = 'en-US';
+  if(cachedVoice) warm.voice = cachedVoice;
+  warm.onend = ()=>{
+    // If a word was queued while we were unlocking, speak it now
+    if(pendingWord){ _speak(pendingWord); pendingWord = null; }
+  };
+  speechSynthesis.speak(warm);
+}
+
+// Attach unlock to first touch/click anywhere on page
+['click','touchstart','keydown'].forEach(evt =>
+  document.addEventListener(evt, unlockTTS, {once: true, passive: true})
+);
+
 function speakWord(word){
   if(!word || word==='—') return;
-
-  // Debounce: cancel any scheduled (not yet spoken) request
   if(speakTimer){ clearTimeout(speakTimer); speakTimer = null; }
 
   speakTimer = setTimeout(()=>{
     speakTimer = null;
     if(!cachedVoice) loadVoice();
+
+    if(!ttsUnlocked){
+      // User hasn't interacted yet — queue and unlock
+      pendingWord = word;
+      unlockTTS();
+      return;
+    }
     _doSpeak(word);
-  }, 450);  // 450ms silence before speaking — enough gap on all browsers
+  }, 400);
 }
 
 function _doSpeak(word){
-  // Strategy: if engine is busy, stop it first then wait for it to actually stop
   if(speechSynthesis.speaking || speechSynthesis.pending){
     speechSynthesis.cancel();
-    // Poll until engine is truly idle (needed for Safari & Firefox)
     let tries = 0;
-    const waitIdle = setInterval(()=>{
+    const poll = setInterval(()=>{
       tries++;
       if(!speechSynthesis.speaking || tries > 20){
-        clearInterval(waitIdle);
-        setTimeout(()=> _speak(word), 80);
+        clearInterval(poll);
+        setTimeout(()=> _speak(word), 50);
       }
-    }, 50);
+    }, 40);
   } else {
     _speak(word);
   }
